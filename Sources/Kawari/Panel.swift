@@ -134,7 +134,8 @@ final class PanelView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         let hairline = 1 / (window?.backingScaleFactor ?? 2)
-        NSColor.separatorColor.setFill()
+        // 不用 separatorColor：面板半透明，它在深色背景前会显得发白；和进度条底槽同一种灰
+        NSColor.labelColor.withAlphaComponent(0.1).setFill()
         for y in separators { CGRect(x: Self.inset, y: y, width: bounds.width - Self.inset * 2, height: hairline).fill() }
         Text.section(String(localized: "账号"), at: CGPoint(x: Self.inset, y: accountsTitle))
     }
