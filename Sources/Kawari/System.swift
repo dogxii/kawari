@@ -44,6 +44,9 @@ final class SystemEffects: Effects {
         launchctl.async { Self.run("/bin/launchctl", arguments) }
     }
 
+    /// 等排队中的 launchctl 执行完；命令行在退出前调用
+    func wait() { launchctl.sync {} }
+
     func open(_ script: URL) {
         guard let app = Terminal.selected else {
             NSWorkspace.shared.open(script)
@@ -124,6 +127,38 @@ enum LoginItem {
         } catch {
             NSSound.beep()
         }
+    }
+}
+
+/// 命令行工具：在 claude 所在的目录（通常是 ~/.local/bin，已在 PATH 里）放一个指向 App 的 kawari 软链接
+enum CommandLineTool {
+    static var link: URL {
+        (besideClaude ? claudeDir! : FileManager.default.homeDirectoryForCurrentUser.appending(path: ".local/bin"))
+            .appending(path: "kawari")
+    }
+
+    /// claude 所在目录必然在 PATH 里，放在旁边最稳；~/.claude/local 例外（claude 靠 alias），这时退回 ~/.local/bin
+    static var besideClaude: Bool { claudeDir.map { !$0.path.hasSuffix("/.claude/local") } ?? false }
+
+    private static var claudeDir: URL? { Claude.path.map { URL(filePath: $0).deletingLastPathComponent() } }
+
+    private static var destination: String? { try? FileManager.default.destinationOfSymbolicLink(atPath: link.path) }
+
+    static var installed: Bool { destination == Bundle.main.executablePath }
+
+    /// 已装就移除，没装就装上；那里若是别人的文件则不动，报错
+    static func toggle() throws {
+        let fm = FileManager.default
+        if installed { return try fm.removeItem(at: link) }
+        if let destination {
+            // 指向别处的旧版 kawari（App 换过位置）可以替换，其他东西不碰
+            guard destination.hasSuffix("/Contents/MacOS/Kawari") else { throw CocoaError(.fileWriteFileExists) }
+            try fm.removeItem(at: link)
+        } else if fm.fileExists(atPath: link.path) {
+            throw CocoaError(.fileWriteFileExists)
+        }
+        try fm.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fm.createSymbolicLink(atPath: link.path, withDestinationPath: Bundle.main.executablePath!)
     }
 }
 

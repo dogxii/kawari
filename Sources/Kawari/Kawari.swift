@@ -30,7 +30,10 @@ final class Kawari {
         Hook.upgrade(paths)
         Zsh.upgrade(paths)
         reload()
-        // launchctl 的环境变量重启后就没了，启动时补上；没选过账号就不碰
+    }
+
+    /// launchctl 的环境变量重启后就没了，App 启动时补上；没选过账号就不碰
+    func restoreEnvironment() {
         if FileManager.default.fileExists(atPath: paths.current.path) { effects.setEnvironment(active.dir?.path) }
     }
 

@@ -59,3 +59,20 @@
 "仍然移除" = "Remove Anyway";
 "登录用的终端" = "Terminal for Sign-In";
 "跟随系统（%@）" = "System (%@)";
+
+/* 命令行 */
+"kawari              列出账号与额度\nkawari use <账号>    切换账号：字母、序号或邮箱开头\nkawari status       当前账号与 5 小时用量，适合放进提示符或 tmux" = "kawari                List accounts and quotas\nkawari use <account>  Switch by letter, number, or email prefix\nkawari status         Current account and 5-hour usage, for your prompt or tmux";
+"用法：kawari use <账号>（字母、序号或邮箱开头）" = "Usage: kawari use <account> (letter, number, or email prefix)";
+"未知命令：%@。运行 kawari help 查看用法" = "Unknown command: %@. Run kawari help for usage.";
+"没有找到账号：%@" = "No account matches: %@";
+"%@ 还没登录，请在菜单栏里登录" = "%@ isn’t signed in yet. Sign in from the menu bar.";
+"切换失败：写不进 ~/.config/kawari/current" = "Couldn’t switch: ~/.config/kawari/current isn’t writable";
+"已切换到 %@ · %@" = "Switched to %@ · %@";
+"还没接入 Claude Code：在菜单栏打开「接入 Claude Code」后，已打开的终端也会跟着切换" = "Not connected yet: turn on “Connect Claude Code” in the menu bar so open terminals follow too.";
+"命令行工具" = "Command Line Tool";
+"已安装到 %@" = "Installed to %@";
+"在终端里运行 kawari 查看账号与额度，kawari use B 切换账号。" = "Run kawari in a terminal to see accounts and quotas, or kawari use B to switch.";
+"没能安装命令行工具" = "Couldn’t install the command line tool";
+"%@ 已经存在，kawari 没有改动它。" = "%@ already exists. kawari left it alone.";
+"%@ 对应不止一个账号，请写得更完整，或用字母" = "%@ matches more than one account. Type more of it, or use the letter.";
+"如果终端提示找不到 kawari，把 %@ 加进 PATH。" = "If your terminal can’t find kawari, add %@ to your PATH.";

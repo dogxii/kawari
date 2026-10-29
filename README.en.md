@@ -31,6 +31,16 @@ Download from [Releases](https://github.com/dogxii/kawari/releases) and drag it 
 
 Then click **Connect** at the top of the panel to start syncing quota.
 
+## Command line
+
+Turn on **Command Line Tool** in the right-click menu, then in a terminal:
+
+```
+kawari              List accounts and quotas
+kawari use B        Switch by letter, number, or email prefix
+kawari status       Current account and 5-hour usage, for your prompt or tmux
+```
+
 ## How it works
 
 Only official Claude Code mechanisms, no private APIs.

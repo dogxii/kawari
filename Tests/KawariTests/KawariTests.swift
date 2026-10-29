@@ -82,10 +82,13 @@ struct AccountTests {
         #expect(kawari.accounts.count == 1)
         #expect(kawari.active.email == "me@home.com")
         #expect(kawari.active.plan == "Pro")
+        kawari.restoreEnvironment()
         #expect(effects.environment.isEmpty)  // 没选过账号，不碰 launchctl
         box.write("", ".config/kawari/current")
-        #expect(Kawari(paths: box.paths, effects: effects).activeKey == "default")
-        #expect(effects.environment == [nil])  // 选过之后，启动时补上
+        let reopened = Kawari(paths: box.paths, effects: effects)
+        #expect(reopened.activeKey == "default" && effects.environment.isEmpty)  // 命令行也会创建 Kawari：只读不碰 launchctl
+        reopened.restoreEnvironment()
+        #expect(effects.environment == [nil])  // 选过之后，App 启动时补上
     }
 
     @Test func addAccountSharesEverythingButIdentity() throws {
@@ -225,6 +228,65 @@ struct AccountTests {
         let config = JSONFile.read(box.home.appending(path: ".claude-accounts/2/.claude.json"))
         #expect((config?["mcpServers"] as? [String: Any])?["a"] != nil)
         #expect((config?["oauthAccount"] as? [String: Any])?["emailAddress"] as? String == "me@work.com")
+    }
+}
+
+// MARK: - 命令行
+
+@MainActor
+struct CLITests {
+    let box = Sandbox()
+    let effects = RecordingEffects()
+
+    func run(_ args: String..., kawari: Kawari) -> (code: Int32, out: [String], err: [String]) {
+        var out: [String] = [], err: [String] = []
+        let code = CLI.run(args, kawari, out: { out.append($0) }, err: { err.append($0) })
+        return (code, out, err)
+    }
+
+    func scene() -> Kawari {
+        box.signIn(".claude.json", "me@home.com")
+        box.signIn(".claude-accounts/2/.claude.json", "work@co.com", type: "claude_pro")
+        box.write("{}", ".claude-accounts/3/.claude.json")
+        let reset = Int(Date().timeIntervalSince1970) + 4800
+        box.write(#"{"rate_limits":{"five_hour":{"used_percentage":62,"resets_at":\#(reset)},"seven_day":{"used_percentage":23,"resets_at":\#(reset)}}}"#,
+                  ".config/kawari/usage/default.json")
+        return Kawari(paths: box.paths, effects: effects)
+    }
+
+    @Test func listsAccountsWithLimits() {
+        let result = run(kawari: scene())
+        #expect(result.code == 0 && result.out.count == 3)
+        #expect(result.out[0].hasPrefix("* A  me@home.com ") && result.out[0].contains("5h  62%  7d  23%"))
+        #expect(result.out[1].hasPrefix("  B  work@co.com ") && result.out[1].contains("Pro") && result.out[1].contains("—"))
+        #expect(result.out[2].hasPrefix("  C  "))
+    }
+
+    @Test func switchesByLetterNumberOrEmail() {
+        let kawari = scene()
+        #expect(run("use", "b", kawari: kawari).code == 0 && kawari.activeKey == "2")
+        #expect(box.read(".config/kawari/current") == kawari.accounts[1].dir!.path)
+        #expect(run("use", "1", kawari: kawari).code == 0 && kawari.activeKey == "default")
+        #expect(run("use", "WORK", kawari: kawari).code == 0 && kawari.activeKey == "2")
+        #expect(run("status", kawari: kawari).out == ["B"])  // 没有额度数据时只有字母
+    }
+
+    @Test func fullEmailWinsAndAmbiguousPrefixIsRefused() {
+        box.signIn(".claude.json", "me@co.com.cn")
+        box.signIn(".claude-accounts/2/.claude.json", "me@co.com")
+        let kawari = Kawari(paths: box.paths, effects: effects)
+        #expect(run("use", "me@co.com", kawari: kawari).code == 0 && kawari.activeKey == "2")
+        #expect(run("use", "me@co", kawari: kawari).code == 1 && kawari.activeKey == "2")
+    }
+
+    @Test func refusesUnknownOrSignedOut() {
+        let kawari = scene()
+        #expect(run("use", "z", kawari: kawari).code == 1)
+        #expect(run("use", "c", kawari: kawari).code == 1)  // 未登录：不切换，也不打开终端
+        #expect(kawari.activeKey == "default" && effects.opened.isEmpty)
+        #expect(run("use", kawari: kawari).code == 64)
+        #expect(run("nope", kawari: kawari).code == 64)
+        #expect(run("status", kawari: kawari).out == ["A 62%"])
     }
 }
 

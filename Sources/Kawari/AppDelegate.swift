@@ -9,6 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
     private var icons: [Ring: NSImage] = [:]
     private var nextRefresh: Timer?
     private var watch: DirectoryWatch?
+    /// ~/.config/kawari：命令行切换账号时写 current，菜单栏随之更新
+    private var supportWatch: DirectoryWatch?
 
     private lazy var menu: NSMenu = {
         let menu = NSMenu()
@@ -30,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
             button.setAccessibilityLabel("kawari")
         }
         kawari.onChange = { [weak self] in self?.refresh() }
+        kawari.restoreEnvironment()
         refresh()
     }
 
@@ -93,6 +96,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
         if watch == nil, kawari.integrated {
             watch = DirectoryWatch(kawari.paths.usage) { [weak self] in self?.kawari.reloadUsage() }
         }
+        if supportWatch == nil {
+            try? FileManager.default.createDirectory(at: kawari.paths.support, withIntermediateDirectories: true)
+            supportWatch = DirectoryWatch(kawari.paths.support) { [weak self] in self?.kawari.reload() }
+        }
         if popover?.isShown == true { panel?.sync() }
         guard let button = item?.button else { return }
 
@@ -154,6 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
         })
         if Bundle.main.isApp {
             menu.addItem(Item(String(localized: "开机启动"), on: LoginItem.enabled) { LoginItem.toggle() })
+            menu.addItem(Item(String(localized: "命令行工具"), on: CommandLineTool.installed) { [unowned self] in toggleCommandLineTool() })
             // 装了不止一个终端时，可以选登录用哪个
             let terminals = Terminal.installed
             if terminals.count > 1 {
@@ -186,6 +194,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
             NSWorkspace.shared.open(URL(string: "https://github.com/dogxii/kawari")!)
         })
         menu.addItem(Item(String(localized: "退出 kawari"), key: "q") { NSApp.terminate(nil) })
+    }
+
+    private func toggleCommandLineTool() {
+        let alert = NSAlert()
+        do {
+            try CommandLineTool.toggle()
+            guard CommandLineTool.installed else { return }
+            let dir = (CommandLineTool.link.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
+            alert.messageText = String(localized: "已安装到 \(dir)")
+            alert.informativeText = String(localized: "在终端里运行 kawari 查看账号与额度，kawari use B 切换账号。")
+            if !CommandLineTool.besideClaude {
+                alert.informativeText += "\n\n" + String(localized: "如果终端提示找不到 kawari，把 \(dir) 加进 PATH。")
+            }
+        } catch {
+            alert.messageText = String(localized: "没能安装命令行工具")
+            alert.informativeText = (error as? CocoaError)?.code == .fileWriteFileExists
+                ? String(localized: "\(CommandLineTool.link.path) 已经存在，kawari 没有改动它。") : error.localizedDescription
+        }
+        NSApp.activate()
+        alert.runModal()
     }
 
     /// 账号行的右键菜单
