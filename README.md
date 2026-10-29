@@ -29,12 +29,13 @@ macOS 14+　·　不到 1 MB　·　原生 AppKit　·　不联网
 
 ## 命令行
 
-右键菜单里打开「命令行工具」，终端里就能用：
+右键菜单里打开「命令行工具」，终端里就能用 `kawari`，或者短名 `kwr`：
 
 ```
-kawari              列出账号与额度
-kawari use B        切换账号：字母、序号或邮箱开头
-kawari status       当前账号与 5 小时用量，适合放进提示符或 tmux
+kwr                 列出账号与额度
+kwr use B           切换账号：字母、序号或邮箱开头
+kwr run B           只用 B 启动 claude，其他终端不受影响；后面的参数原样交给 claude
+kwr status          当前账号与 5 小时用量，适合放进提示符或 tmux
 ```
 
 ## 它是怎么做的

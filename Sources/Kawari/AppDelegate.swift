@@ -204,7 +204,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
             let dir = (CommandLineTool.link.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
             alert.messageText = String(localized: "已安装到 \(dir)")
             alert.informativeText = String(localized: "在终端里运行 kawari 查看账号与额度，kawari use B 切换账号。")
-            if !CommandLineTool.besideClaude {
+            if CommandLineTool.ours(CommandLineTool.short) {
+                alert.informativeText += " " + String(localized: "也可以用短名 kwr，比如 kwr run B。")
+            }
+            if !CommandLineTool.likelyOnPath {
                 alert.informativeText += "\n\n" + String(localized: "如果终端提示找不到 kawari，把 \(dir) 加进 PATH。")
             }
         } catch {

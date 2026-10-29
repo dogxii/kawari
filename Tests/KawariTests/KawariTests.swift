@@ -271,6 +271,20 @@ struct CLITests {
         #expect(run("status", kawari: kawari).out == ["B"])  // 没有额度数据时只有字母
     }
 
+    @Test func runLaunchesClaudeWithoutSwitching() {
+        let kawari = scene()
+        var launched: [(dir: URL?, args: [String])] = []
+        func run(_ args: String...) -> Int32 {
+            CLI.run(args, kawari, out: { _ in }, err: { _ in }) { launched.append(($0, $1)); return EACCES }
+        }
+        #expect(run("run", "b", "--resume") == 126)  // 启动失败如实报告
+        _ = run("run", "a", "--", "-p", "hi")  // 主账号不设 CLAUDE_CONFIG_DIR；-- 之后原样交给 claude
+        #expect(launched.map(\.dir) == [kawari.accounts[1].dir, nil])
+        #expect(launched.map(\.args) == [["--resume"], ["-p", "hi"]])
+        #expect(kawari.activeKey == "default" && box.read(".config/kawari/current") == nil)
+        #expect(run("run", "c") == 1 && run("run") == 64 && launched.count == 2)  // 未登录或没给账号：不启动
+    }
+
     @Test func fullEmailWinsAndAmbiguousPrefixIsRefused() {
         box.signIn(".claude.json", "me@co.com.cn")
         box.signIn(".claude-accounts/2/.claude.json", "me@co.com")

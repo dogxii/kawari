@@ -61,7 +61,10 @@
 "跟随系统（%@）" = "System (%@)";
 
 /* 命令行 */
-"kawari              列出账号与额度\nkawari use <账号>    切换账号：字母、序号或邮箱开头\nkawari status       当前账号与 5 小时用量，适合放进提示符或 tmux" = "kawari                List accounts and quotas\nkawari use <account>  Switch by letter, number, or email prefix\nkawari status         Current account and 5-hour usage, for your prompt or tmux";
+"kawari                    列出账号与额度\nkawari use <账号>          切换账号：字母、序号或邮箱开头\nkawari run <账号> [参数]    只用这个账号启动 claude，不影响其他终端\nkawari status             当前账号与 5 小时用量，适合放进提示符或 tmux" = "kawari                       List accounts and quotas\nkawari use <account>         Switch by letter, number, or email prefix\nkawari run <account> [args]  Start claude with this account, in this terminal only\nkawari status                Current account and 5-hour usage, for your prompt or tmux";
+"用法：kawari run <账号> [claude 的参数]" = "Usage: kawari run <account> [claude arguments]";
+"无法启动 claude：%@" = "Couldn’t start claude: %@";
+"找不到 claude，请确认它在 PATH 里" = "Couldn’t find claude. Make sure it’s on your PATH.";
 "用法：kawari use <账号>（字母、序号或邮箱开头）" = "Usage: kawari use <account> (letter, number, or email prefix)";
 "未知命令：%@。运行 kawari help 查看用法" = "Unknown command: %@. Run kawari help for usage.";
 "没有找到账号：%@" = "No account matches: %@";
@@ -72,6 +75,7 @@
 "命令行工具" = "Command Line Tool";
 "已安装到 %@" = "Installed to %@";
 "在终端里运行 kawari 查看账号与额度，kawari use B 切换账号。" = "Run kawari in a terminal to see accounts and quotas, or kawari use B to switch.";
+"也可以用短名 kwr，比如 kwr run B。" = "The short name kwr works too, like kwr run B.";
 "没能安装命令行工具" = "Couldn’t install the command line tool";
 "%@ 已经存在，kawari 没有改动它。" = "%@ already exists. kawari left it alone.";
 "%@ 对应不止一个账号，请写得更完整，或用字母" = "%@ matches more than one account. Type more of it, or use the letter.";

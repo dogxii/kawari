@@ -3,13 +3,14 @@ import Foundation
 /// 命令行：和菜单栏共用同一份账号与额度，切换后菜单栏与已打开的终端都会跟上。
 ///   kawari              列出账号与额度
 ///   kawari use <账号>    按字母、序号或邮箱开头切换
+///   kawari run <账号>    只用这个账号启动 claude，不影响其他终端
 ///   kawari status       一行状态，适合放进提示符或 tmux
 @MainActor
 enum CLI {
-    /// 带参数运行，或经由 kawari 软链接运行时走命令行；从访达打开时没有参数（旧系统可能带 -psn_）
+    /// 带参数运行，或经由 kawari / kwr 软链接运行时走命令行；从访达打开时没有参数（旧系统可能带 -psn_）
     static var invoked: Bool {
         CommandLine.arguments.dropFirst().contains { !$0.hasPrefix("-psn_") }
-            || URL(filePath: CommandLine.arguments[0]).lastPathComponent == "kawari"
+            || ["kawari", "kwr"].contains(URL(filePath: CommandLine.arguments[0]).lastPathComponent)
     }
 
     static func main() -> Int32 {
@@ -25,24 +26,42 @@ enum CLI {
         return code
     }
 
-    /// 返回退出码；输出经由 out / err，测试里可以收集
-    static func run(_ args: [String], _ kawari: Kawari, out: (String) -> Void, err: (String) -> Void) -> Int32 {
+    /// 返回退出码；输出经由 out / err，测试里可以收集。kawari 用到时才创建（help、用法错误不必读账号）。
+    /// launch 启动 claude，成功时不返回，失败时返回 errno
+    static func run(_ args: [String], _ kawari: @autoclosure () -> Kawari, out: (String) -> Void, err: (String) -> Void,
+                    launch: (URL?, [String]) -> Int32 = Claude.exec) -> Int32 {
         switch args.first {
         case nil, "ls", "list":
-            list(kawari).forEach(out)
+            list(kawari()).forEach(out)
         case "use", "switch":
             guard args.count == 2 else {
                 err(String(localized: "用法：kawari use <账号>（字母、序号或邮箱开头）"))
                 return 64
             }
-            return use(args[1], kawari, out: out, err: err)
+            return use(args[1], kawari(), out: out, err: err)
+        case "run":
+            guard args.count >= 2 else {
+                err(String(localized: "用法：kawari run <账号> [claude 的参数]"))
+                return 64
+            }
+            guard let target = signedIn(args[1], kawari(), err: err) else { return 1 }
+            // 允许用 -- 隔开 claude 的参数
+            let rest = args.dropFirst(2).first == "--" ? args.dropFirst(3) : args.dropFirst(2)
+            let error = launch(target.dir, Array(rest))
+            guard error != ENOENT else {
+                err(String(localized: "找不到 claude，请确认它在 PATH 里"))
+                return 127
+            }
+            err(String(localized: "无法启动 claude：\(String(cString: strerror(error)))"))
+            return 126
         case "status":
-            out(status(kawari))
+            out(status(kawari()))
         case "help", "-h", "--help":
             out(String(localized: """
-            kawari              列出账号与额度
-            kawari use <账号>    切换账号：字母、序号或邮箱开头
-            kawari status       当前账号与 5 小时用量，适合放进提示符或 tmux
+            kawari                    列出账号与额度
+            kawari use <账号>          切换账号：字母、序号或邮箱开头
+            kawari run <账号> [参数]    只用这个账号启动 claude，不影响其他终端
+            kawari status             当前账号与 5 小时用量，适合放进提示符或 tmux
             """))
         default:
             err(String(localized: "未知命令：\(args[0])。运行 kawari help 查看用法"))
@@ -55,12 +74,13 @@ enum CLI {
     static func list(_ kawari: Kawari) -> [String] {
         let now = kawari.now
         let width = kawari.accounts.map { ($0.email ?? "").count }.max() ?? 0
+        let planWidth = max(8, kawari.accounts.map { ($0.plan ?? "").count }.max() ?? 0)
         return kawari.accounts.map { account in
             let mark = account.key == kawari.activeKey ? "*" : " "
             let head = "\(mark) \(kawari.letter(account))  "
             guard let email = account.email else { return head + String(localized: "新账号 · 未登录") }
             var line = head + email.padding(toLength: width, withPad: " ", startingAt: 0)
-                + "  " + (account.plan ?? "").padding(toLength: 8, withPad: " ", startingAt: 0)
+                + "  " + (account.plan ?? "").padding(toLength: planWidth, withPad: " ", startingAt: 0)
             guard let limits = kawari.limits[account.key] else { return line + "  5h   —   7d   —" }
             func percent(_ window: Window?) -> String {
                 let value = "\(Int((window?.used(at: now) ?? 0).rounded()))%"
@@ -82,6 +102,21 @@ enum CLI {
     }
 
     private static func use(_ query: String, _ kawari: Kawari, out: (String) -> Void, err: (String) -> Void) -> Int32 {
+        guard let target = signedIn(query, kawari, err: err), let email = target.email else { return 1 }
+        kawari.activate(target)
+        guard kawari.activeKey == target.key else {
+            err(String(localized: "切换失败：写不进 ~/.config/kawari/current"))
+            return 1
+        }
+        out(String(localized: "已切换到 \(kawari.letter(target)) · \(email)"))
+        if !kawari.integrated {
+            out(String(localized: "还没接入 Claude Code：在菜单栏打开「接入 Claude Code」后，已打开的终端也会跟着切换"))
+        }
+        return 0
+    }
+
+    /// 按序号、字母、完整邮箱、邮箱开头依次找已登录的账号；找不到时报错并返回 nil
+    private static func signedIn(_ query: String, _ kawari: Kawari, err: (String) -> Void) -> Account? {
         let accounts = kawari.accounts, lowered = query.lowercased()
         // 邮箱先找完全相同的；只给开头时必须只对上一个，免得切错
         let prefixed = accounts.filter { $0.email?.lowercased().hasPrefix(lowered) == true }
@@ -93,21 +128,12 @@ enum CLI {
             err(prefixed.count > 1
                 ? String(localized: "\(query) 对应不止一个账号，请写得更完整，或用字母")
                 : String(localized: "没有找到账号：\(query)"))
-            return 1
+            return nil
         }
-        guard let email = target.email else {
+        guard target.signedIn else {
             err(String(localized: "\(kawari.letter(target)) 还没登录，请在菜单栏里登录"))
-            return 1
+            return nil
         }
-        kawari.activate(target)
-        guard kawari.activeKey == target.key else {
-            err(String(localized: "切换失败：写不进 ~/.config/kawari/current"))
-            return 1
-        }
-        out(String(localized: "已切换到 \(kawari.letter(target)) · \(email)"))
-        if !kawari.integrated {
-            out(String(localized: "还没接入 Claude Code：在菜单栏打开「接入 Claude Code」后，已打开的终端也会跟着切换"))
-        }
-        return 0
+        return target
     }
 }

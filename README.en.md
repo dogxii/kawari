@@ -33,12 +33,13 @@ Then click **Connect** at the top of the panel to start syncing quota.
 
 ## Command line
 
-Turn on **Command Line Tool** in the right-click menu, then in a terminal:
+Turn on **Command Line Tool** in the right-click menu, then use `kawari`, or the short name `kwr`, in a terminal:
 
 ```
-kawari              List accounts and quotas
-kawari use B        Switch by letter, number, or email prefix
-kawari status       Current account and 5-hour usage, for your prompt or tmux
+kwr                 List accounts and quotas
+kwr use B           Switch by letter, number, or email prefix
+kwr run B           Start claude with B in this terminal only; other arguments go to claude
+kwr status          Current account and 5-hour usage, for your prompt or tmux
 ```
 
 ## How it works

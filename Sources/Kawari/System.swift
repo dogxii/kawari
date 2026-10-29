@@ -96,6 +96,13 @@ enum Claude {
             "/usr/local/bin/claude", "\(home)/.npm-global/bin/claude", "\(home)/.bun/bin/claude",
         ].first { FileManager.default.isExecutableFile(atPath: $0) }
     }()
+
+    /// 命令行用：设好账号目录后按 PATH 换成 claude 进程；成功时不返回，失败返回 errno。主账号不设 CLAUDE_CONFIG_DIR
+    static func exec(_ dir: URL?, _ arguments: [String]) -> Int32 {
+        if let dir { setenv("CLAUDE_CONFIG_DIR", dir.path, 1) } else { unsetenv("CLAUDE_CONFIG_DIR") }
+        execvp("claude", (["claude"] + arguments).map { strdup($0) } + [nil])
+        return errno
+    }
 }
 
 /// 目录里有文件新增、改名或删除时回调（status line 写完用量会改名替换）
@@ -130,35 +137,47 @@ enum LoginItem {
     }
 }
 
-/// 命令行工具：在 claude 所在的目录（通常是 ~/.local/bin，已在 PATH 里）放一个指向 App 的 kawari 软链接
+/// 命令行工具：在 ~/.local/bin 放指向 App 的 kawari 与 kwr 软链接
 enum CommandLineTool {
-    static var link: URL {
-        (besideClaude ? claudeDir! : FileManager.default.homeDirectoryForCurrentUser.appending(path: ".local/bin"))
-            .appending(path: "kawari")
+    static var link: URL { dir.appending(path: "kawari") }
+
+    /// 短名，和 kawari 完全一样；被别的程序占了就只装 kawari
+    static var short: URL { dir.appending(path: "kwr") }
+
+    private static var dir: URL { FileManager.default.homeDirectoryForCurrentUser.appending(path: ".local/bin") }
+
+    /// 官方安装器把 claude 放在 ~/.local/bin 并加进 PATH；用别的方式装的，这个目录未必在 PATH 里
+    static var likelyOnPath: Bool { FileManager.default.isExecutableFile(atPath: dir.appending(path: "claude").path) }
+
+    static var installed: Bool { ours(link) }
+
+    static func ours(_ url: URL) -> Bool { destination(url) == Bundle.main.executablePath }
+
+    private static func destination(_ url: URL) -> String? {
+        try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)
     }
-
-    /// claude 所在目录必然在 PATH 里，放在旁边最稳；~/.claude/local 例外（claude 靠 alias），这时退回 ~/.local/bin
-    static var besideClaude: Bool { claudeDir.map { !$0.path.hasSuffix("/.claude/local") } ?? false }
-
-    private static var claudeDir: URL? { Claude.path.map { URL(filePath: $0).deletingLastPathComponent() } }
-
-    private static var destination: String? { try? FileManager.default.destinationOfSymbolicLink(atPath: link.path) }
-
-    static var installed: Bool { destination == Bundle.main.executablePath }
 
     /// 已装就移除，没装就装上；那里若是别人的文件则不动，报错
     static func toggle() throws {
+        if installed {
+            if ours(short) { try? FileManager.default.removeItem(at: short) }
+            return try FileManager.default.removeItem(at: link)
+        }
+        try place(link)
+        try? place(short)
+    }
+
+    private static func place(_ url: URL) throws {
         let fm = FileManager.default
-        if installed { return try fm.removeItem(at: link) }
-        if let destination {
+        if let destination = destination(url) {
             // 指向别处的旧版 kawari（App 换过位置）可以替换，其他东西不碰
             guard destination.hasSuffix("/Contents/MacOS/Kawari") else { throw CocoaError(.fileWriteFileExists) }
-            try fm.removeItem(at: link)
-        } else if fm.fileExists(atPath: link.path) {
+            try fm.removeItem(at: url)
+        } else if fm.fileExists(atPath: url.path) {
             throw CocoaError(.fileWriteFileExists)
         }
-        try fm.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try fm.createSymbolicLink(atPath: link.path, withDestinationPath: Bundle.main.executablePath!)
+        try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fm.createSymbolicLink(atPath: url.path, withDestinationPath: Bundle.main.executablePath!)
     }
 }
 
