@@ -6,9 +6,14 @@
 
 **替わり** — a menu bar switcher for Claude Code accounts
 
-See how much quota every account has left, and switch with one click.
+Light, open source, and zero heartburn.
 
 macOS 14+　·　under 1 MB　·　native AppKit　·　no network
+
+[![Release](https://img.shields.io/github/v/release/dogxii/kawari?style=flat-square&color=5856D6)](https://github.com/dogxii/kawari/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/dogxii/kawari/total?style=flat-square&color=5856D6)](https://github.com/dogxii/kawari/releases)
+[![Stars](https://img.shields.io/github/stars/dogxii/kawari?style=flat-square&color=5856D6)](https://github.com/dogxii/kawari/stargazers)
+[![License](https://img.shields.io/github/license/dogxii/kawari?style=flat-square&color=5856D6)](LICENSE)
 
 [中文](README.md)
 
@@ -48,3 +53,16 @@ swift test                      # accounts, integration, hook script, token ledg
 ./scripts/snapshot.sh           # render the panel sheet to build/snapshots/
 ./scripts/icon.sh               # regenerate the app icon
 ```
+
+## Star History
+
+<a href="https://star-history.com/#dogxii/kawari&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=dogxii/kawari&type=Date&theme=dark">
+    <img alt="Star History" src="https://api.star-history.com/svg?repos=dogxii/kawari&type=Date" width="600">
+  </picture>
+</a>
+
+## License
+
+[MIT](LICENSE)

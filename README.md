@@ -6,11 +6,14 @@
 
 **替わり** — 菜单栏里的 Claude Code 账号切换器
 
-一眼看完账号剩余额度，点一下换过去。
-
 轻量，开源，用起来不烧心。
 
 macOS 14+　·　不到 1 MB　·　原生 AppKit　·　不联网
+
+[![Release](https://img.shields.io/github/v/release/dogxii/kawari?style=flat-square&color=5856D6)](https://github.com/dogxii/kawari/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/dogxii/kawari/total?style=flat-square&color=5856D6)](https://github.com/dogxii/kawari/releases)
+[![Stars](https://img.shields.io/github/stars/dogxii/kawari?style=flat-square&color=5856D6)](https://github.com/dogxii/kawari/stargazers)
+[![License](https://img.shields.io/github/license/dogxii/kawari?style=flat-square&color=5856D6)](LICENSE)
 
 [English](README.en.md)
 
@@ -46,3 +49,16 @@ swift test                      # 账号、接入、钩子脚本、用量统计
 ./scripts/snapshot.sh           # 渲染面板对照图到 build/snapshots/
 ./scripts/icon.sh               # 重新生成 App 图标
 ```
+
+## Star History
+
+<a href="https://star-history.com/#dogxii/kawari&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=dogxii/kawari&type=Date&theme=dark">
+    <img alt="Star History" src="https://api.star-history.com/svg?repos=dogxii/kawari&type=Date" width="600">
+  </picture>
+</a>
+
+## 许可证
+
+[MIT](LICENSE)
