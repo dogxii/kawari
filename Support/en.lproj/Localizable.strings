@@ -1,0 +1,61 @@
+/* 面板：当前账号 */
+"当前账号" = "Current";
+"未登录" = "Signed out";
+"右键这里登录" = "Right-click here to sign in";
+"用这个账号运行一次 Claude Code 后显示额度" = "Limits appear after you run Claude Code with this account";
+"5 小时" = "5-hour";
+"7 天" = "7-day";
+"%@ 后重置" = "Resets in %@";
+"已重置，额度充足" = "Reset · plenty left";
+
+/* 面板：账号 */
+"账号" = "Accounts";
+"新账号 · 未登录" = "New account · Signed out";
+"切换" = "Switch";
+"登录" = "Sign In";
+"当前" = "Current";
+"等待终端里完成登录…" = "Finish signing in in Terminal…";
+
+/* 面板：用量 */
+"Token 用量" = "Tokens";
+"今天" = "Today";
+"正在统计…" = "Counting…";
+"本地会话记录里的 token 数，含缓存读写" = "Tokens in local session transcripts, including cache reads and writes";
+
+/* 面板：接入与操作 */
+"接入 Claude Code" = "Connect Claude Code";
+"同步额度，终端跟随切换" = "Sync limits, let terminals follow";
+"接入" = "Connect";
+"无法接入 Claude Code" = "Couldn't connect Claude Code";
+"kawari 已撤回这次的改动。" = "kawari undid its changes.";
+"添加账号" = "Add Account";
+"设置" = "Settings";
+
+/* 菜单栏 */
+"5 小时额度已用 %lld%%" = "%lld%% of 5-hour limit used";
+
+/* 菜单 */
+"添加账号…" = "Add Account…";
+"开机启动" = "Open at Login";
+"退出 kawari" = "Quit kawari";
+"登录…" = "Sign In…";
+"重新登录…" = "Sign In Again…";
+"在访达中显示" = "Show in Finder";
+"移除账号…" = "Remove Account…";
+
+/* 移除 */
+"移除 %@？" = "Remove %@?";
+"这个账号" = "this account";
+"会退出它的登录，并把它的目录移到废纸篓。会话记录与设置是共用的，不受影响。" = "kawari signs it out and moves its folder to the Trash. Shared sessions and settings stay as they are.";
+"移除" = "Remove";
+"取消" = "Cancel";
+
+/* 终端 */
+"登录完成，可以关闭这个窗口。" = "Signed in. You can close this window.";
+"跟随系统" = "System";
+"语言" = "Language";
+"没能移除 %@" = "Couldn’t remove %@";
+"退出登录时出错，目录已保留。仍然移除会跳过退出登录，它在钥匙串里的登录凭证可能会留下。" = "Signing out failed, so its folder was kept. Removing it anyway skips sign-out, and its sign-in may stay in your Keychain.";
+"仍然移除" = "Remove Anyway";
+"登录用的终端" = "Terminal for Sign-In";
+"跟随系统（%@）" = "System (%@)";
