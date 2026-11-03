@@ -29,6 +29,10 @@ protocol Effects: AnyObject {
     func setEnvironment(_ dir: String?)
     /// 用默认终端运行 .command 脚本
     func open(_ script: URL)
+    /// 登录用哪个浏览器（bundle id）；nil 表示系统默认浏览器
+    var loginBrowser: String? { get }
+    /// 在后台删掉已经没有主人的文件
+    func discard(_ items: [URL])
     /// 先退出该目录的登录（Claude Code 会删掉对应的钥匙串条目），成功了再把目录移到废纸篓。
     /// logout 为 false 时直接移走；回调目录是否已移走
     func remove(_ dir: URL, logout: Bool, then done: @escaping @MainActor @Sendable (Bool) -> Void)
@@ -53,6 +57,12 @@ final class SystemEffects: Effects {
             return
         }
         NSWorkspace.shared.open([script], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    var loginBrowser: String? { LoginBrowser.selectedID }
+
+    func discard(_ items: [URL]) {
+        Task.detached { for item in items { try? FileManager.default.removeItem(at: item) } }
     }
 
     func remove(_ dir: URL, logout: Bool, then done: @escaping @MainActor @Sendable (Bool) -> Void) {
@@ -213,8 +223,29 @@ enum Terminal {
     static func select(_ app: URL?) {
         UserDefaults.standard.set(app.flatMap { Bundle(url: $0)?.bundleIdentifier }, forKey: key)
     }
+}
 
-    static func name(_ app: URL) -> String { FileManager.default.displayName(atPath: app.path).replacingOccurrences(of: ".app", with: "") }
+/// 登录用哪个浏览器。只列支持按目录隔离、并且实测过的；默认跟随系统
+@MainActor
+enum LoginBrowser {
+    private static let known = ["com.google.Chrome", "com.microsoft.edgemac"]
+    private static let key = "loginBrowser"
+
+    static var installed: [URL] { known.compactMap(NSWorkspace.shared.urlForApplication(withBundleIdentifier:)) }
+
+    static var systemDefault: URL? { URL(string: "https://claude.ai").flatMap { NSWorkspace.shared.urlForApplication(toOpen: $0) } }
+
+    /// nil 表示跟随系统；选过的浏览器被卸载了也回到跟随系统
+    static var selectedID: String? {
+        guard let id = UserDefaults.standard.string(forKey: key),
+              NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) != nil
+        else { return nil }
+        return id
+    }
+
+    static func select(_ app: URL?) {
+        UserDefaults.standard.set(app.flatMap { Bundle(url: $0)?.bundleIdentifier }, forKey: key)
+    }
 }
 
 /// 界面语言：写进 App 自己的 AppleLanguages，重启后生效。nil 表示跟随系统

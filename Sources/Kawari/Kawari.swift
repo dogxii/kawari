@@ -58,6 +58,8 @@ final class Kawari {
             }
             emails[account.key] = account.email
         }
+        let unwanted = BrowserData.collect(paths, keeping: removing)
+        if !unwanted.isEmpty { effects.discard(unwanted) }
         reloadUsage()
     }
 
@@ -149,7 +151,7 @@ final class Kawari {
     /// 建好共用数据的新目录，然后在终端里走官方登录
     func addAccount() throws {
         let fm = FileManager.default
-        let key = Sharing.nextKey(in: paths.accounts)
+        let key = Sharing.nextKey(in: paths.accounts, reserved: removing.union(BrowserData.keys(paths)))
         let dir = paths.accounts.appending(path: key)
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         try Sharing.seed(paths.primary)
@@ -162,20 +164,12 @@ final class Kawari {
     }
 
     func login(_ account: Account) {
-        let environment = account.dir.map { "export CLAUDE_CONFIG_DIR=\($0.path.shellQuoted)" } ?? "unset CLAUDE_CONFIG_DIR"
-        let done = String(localized: "登录完成，可以关闭这个窗口。")
-        let script = """
-        #!/bin/zsh -l
-        # kawari：登录 Claude 账号
-        clear
-        \(environment)
-        \(Claude.path?.shellQuoted ?? "claude") auth login && printf '\\n%s\\n' \(done.shellQuoted)
-
-        """
         let file = paths.loginScript(account.key)
         do {
             let fm = FileManager.default
             try fm.createDirectory(at: paths.support, withIntermediateDirectories: true)
+            let opener = try effects.loginBrowser.map { try BrowserData.prepare($0, account.key, paths) }
+            let script = LoginScript.render(claude: Claude.path ?? "claude", dir: account.dir, email: account.email, opener: opener)
             try Data(script.utf8).write(to: file, options: .atomic)
             try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path)
         } catch {
@@ -219,11 +213,13 @@ final class Kawari {
         onChange()
         let usage = paths.usage.appending(path: "\(account.key).json")
         let script = paths.loginScript(account.key)
+        let opener = paths.browserOpener(account.key)
         effects.remove(dir, logout: !force) { [weak self] removed in
             self?.removing.remove(account.key)
             if removed {
                 try? FileManager.default.removeItem(at: usage)
                 try? FileManager.default.removeItem(at: script)
+                try? FileManager.default.removeItem(at: opener)
             }
             self?.reload()
             done(removed)

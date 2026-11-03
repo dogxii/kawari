@@ -52,11 +52,27 @@ final class RecordingEffects: Effects {
     var removed: [URL] = []
     /// 模拟退出登录失败（比如找不到 claude）
     var logoutFails = false
+    var loginBrowser: String?
+    /// 模拟后台移除还没结束：回调留到测试手动调用
+    var holdRemoval = false
+    var heldRemoval: (@MainActor @Sendable (Bool) -> Void)?
 
     func setEnvironment(_ dir: String?) { environment.append(dir) }
     func open(_ script: URL) { opened.append(script) }
+    /// 模拟后台删除排着队：先记下，由测试决定何时执行
+    var holdDiscard = false
+    var heldDiscards: [URL] = []
+    func discard(_ items: [URL]) {
+        if holdDiscard { return heldDiscards += items }
+        for item in items { try? FileManager.default.removeItem(at: item) }
+    }
     func remove(_ dir: URL, logout: Bool, then done: @escaping @MainActor @Sendable (Bool) -> Void) {
         if logout && logoutFails { return done(false) }
+        if holdRemoval {
+            removed.append(dir)
+            heldRemoval = done
+            return
+        }
         removed.append(dir)
         done(true)
     }
@@ -521,5 +537,209 @@ struct UsageTests {
         try touch(".claude/projects/p/s1.jsonl")
         totals = ledger.totals(now: now)
         #expect(totals.today == 129)
+    }
+}
+
+// MARK: - 登录用的浏览器
+
+@MainActor
+struct BrowserTests {
+    let box = Sandbox()
+    let effects = RecordingEffects()
+    let chrome = "com.google.Chrome"
+
+    private func mode(_ url: URL) -> Int? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions] as? Int
+    }
+
+    private func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.path) }
+
+    /// 可执行的假 claude：auth login 按 loginExit 退出，auth status 输出 status
+    private func fakeClaude(status: String, loginExit: Int = 0) -> String {
+        box.write("""
+        #!/bin/sh
+        echo "$*" >> "$HOME/claude.log"
+        if [ "$2" = login ]; then
+          echo "browser=$BROWSER config=$CLAUDE_CONFIG_DIR" >> "$HOME/claude.log"
+          exit \(loginExit)
+        fi
+        printf '%s' \(status.shellQuoted)
+        """, "fake claude")
+        let path = box.home.appending(path: "fake claude").path
+        try! FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path)
+        return path
+    }
+
+    private func run(_ script: String) -> String {
+        box.write(script, "login.command")
+        return box.sh("/bin/zsh -f \"$HOME/login.command\" 2>/dev/null")
+    }
+
+    @Test func defaultBrowserChangesNothing() throws {
+        box.write("{}", ".claude-accounts/2/.claude.json")
+        let kawari = Kawari(paths: box.paths, effects: effects)
+        kawari.login(kawari.accounts[1])
+        let script = try #require(box.read(".config/kawari/login-2.command"))
+        #expect(!script.contains("BROWSER"))
+        #expect(!script.contains("--email"))
+        #expect(!exists(box.paths.browserOpener("2")))
+        #expect(!exists(box.paths.browsers))
+    }
+
+    @Test func chosenBrowserGetsPrivateDirectoryPerAccount() throws {
+        box.write("{}", ".claude-accounts/2/.claude.json")
+        effects.loginBrowser = chrome
+        let kawari = Kawari(paths: box.paths, effects: effects)
+        kawari.login(kawari.accounts[1])
+        let script = try #require(box.read(".config/kawari/login-2.command"))
+        #expect(script.contains("export BROWSER=\(box.paths.browserOpener("2").path.shellQuoted)"))
+        #expect(mode(box.paths.browserData(chrome, "2")) == 0o700)
+        #expect(mode(box.paths.browserOpener("2")) == 0o755)
+        #expect(box.paths.browserData(chrome, "2") != box.paths.browserData("com.microsoft.edgemac", "2"))
+    }
+
+    /// 真的跑一遍脚本（把 open 换成假的）：路径里的空格、引号和 $() 都要原样到达 open
+    @Test func openerPassesArgumentsVerbatim() throws {
+        let data = box.home.appending(path: "it's $(touch pwned) dir")
+        let log = box.home.appending(path: "argv.log").path
+        box.write("#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\" >> \(log.shellQuoted); done\n", "open")
+        let fake = box.home.appending(path: "open").path
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake)
+        box.write(BrowserData.opener(chrome, data).replacingOccurrences(of: "/usr/bin/open", with: fake), "opener")
+        box.sh("/bin/sh \"$HOME/opener\" 'https://claude.com/login?a=1&b=2'")
+        #expect(box.read("argv.log")?.split(separator: "\n").map(String.init) == [
+            "-n", "-b", chrome, "--args", "--user-data-dir=\(data.path)",
+            "--no-first-run", "--no-default-browser-check", "https://claude.com/login?a=1&b=2",
+        ])
+        #expect(!exists(box.home.appending(path: "pwned")))
+    }
+
+    @Test func newAccountJustSignsIn() {
+        let claude = fakeClaude(status: "unused")
+        let out = run(LoginScript.render(claude: claude, dir: box.home.appending(path: "acct"), email: nil, opener: nil))
+        #expect(box.read("claude.log") == "auth login\nbrowser= config=\(box.home.path)/acct\n")
+        #expect(out.contains("登录完成"))
+    }
+
+    @Test func signingInAgainPrefillsEmailAndStaysQuietWhenItMatches() {
+        let claude = fakeClaude(status: #"{"email":"ME@work.com"}"#)
+        let out = run(LoginScript.render(claude: claude, dir: box.home.appending(path: "acct"), email: "me@work.com",
+                                         opener: URL(filePath: "/tmp/op en")))
+        let log = box.read("claude.log") ?? ""
+        #expect(log.contains("auth login --email me@work.com"))
+        #expect(log.contains("browser=/tmp/op en config=\(box.home.path)/acct"))
+        #expect(log.contains("auth status --json"))
+        #expect(out.contains("登录完成"))
+        #expect(!out.contains("注意"))
+    }
+
+    @Test func signingInAsSomeoneElseWarns() {
+        let claude = fakeClaude(status: #"{"email":"other@work.com"}"#)
+        let out = run(LoginScript.render(claude: claude, dir: nil, email: "me@work.com", opener: nil))
+        #expect(out.contains("注意：这次登录的不是 me@work.com"))
+        #expect(out.contains("other@work.com"))
+    }
+
+    @Test func unreadableStatusIsReportedNotAssumed() {
+        let claude = fakeClaude(status: "not json")
+        let out = run(LoginScript.render(claude: claude, dir: nil, email: "me@work.com", opener: nil))
+        #expect(out.contains("没能确认"))
+        #expect(!out.contains("注意"))
+    }
+
+    @Test func failedLoginClaimsNothing() {
+        let claude = fakeClaude(status: #"{"email":"other@work.com"}"#, loginExit: 1)
+        let out = run(LoginScript.render(claude: claude, dir: nil, email: "me@work.com", opener: nil))
+        #expect(!out.contains("登录完成") && !out.contains("注意") && !out.contains("没能确认"))
+        #expect(!(box.read("claude.log") ?? "").contains("auth status"))
+    }
+
+    @Test func removingAccountCleansBrowserData() {
+        box.signIn(".claude-accounts/2/.claude.json", "me@work.com")
+        effects.loginBrowser = chrome
+        let kawari = Kawari(paths: box.paths, effects: effects)
+        kawari.login(kawari.accounts[1])
+        #expect(exists(box.paths.browserData(chrome, "2")))
+        effects.logoutFails = true
+        kawari.remove(kawari.accounts[1])
+        #expect(exists(box.paths.browserData(chrome, "2")))  // 退出登录失败、账号还在，数据也要留着
+        effects.logoutFails = false
+        try! FileManager.default.removeItem(at: box.home.appending(path: ".claude-accounts/2"))  // 替身不会真的移走
+        kawari.remove(kawari.accounts[1])
+        #expect(!exists(box.paths.browserData(chrome, "2")))
+        #expect(!exists(box.paths.browserOpener("2")))
+    }
+
+    /// 浏览器还开着：目录不能删，编号也不能给新账号；退出后才清理、才可复用
+    @Test func runningBrowserKeepsDirectoryAndNumber() throws {
+        box.write("{}", ".claude.json")
+        let data = box.paths.browserData(chrome, "2")
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        let lock = data.appending(path: "SingletonLock")
+        try FileManager.default.createSymbolicLink(atPath: lock.path, withDestinationPath: "host-name-\(getpid())")
+        let kawari = Kawari(paths: box.paths, effects: effects)
+        #expect(exists(data))
+        try kawari.addAccount()
+        #expect(kawari.accounts.map(\.key) == ["default", "3"])
+
+        // 崩溃或被杀后锁会留下：进程不在了就不算在用
+        try FileManager.default.removeItem(at: lock)
+        try FileManager.default.createSymbolicLink(atPath: lock.path, withDestinationPath: "host-name-99999999")
+        kawari.reload()
+        #expect(!exists(data))
+        try kawari.addAccount()
+        #expect(kawari.accounts.map(\.key) == ["default", "2", "3"])
+    }
+
+    @Test func unreadableLockCountsAsInUse() throws {
+        let data = box.home.appending(path: "data")
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        #expect(!BrowserData.inUse(data))
+        try FileManager.default.createSymbolicLink(atPath: data.appending(path: "SingletonLock").path, withDestinationPath: "garbled")
+        #expect(BrowserData.inUse(data))
+    }
+
+    @Test func dataOfLiveAccountsIsNeverAnOrphan() throws {
+        box.write("{}", ".claude-accounts/2/.claude.json")
+        for key in [Account.primaryKey, "2", "7", "8"] {
+            try FileManager.default.createDirectory(at: box.paths.browserData(chrome, key), withIntermediateDirectories: true)
+        }
+        let orphans = BrowserData.orphans(box.paths, keeping: ["8"]).map(\.lastPathComponent)
+        #expect(orphans == ["7"])  // 主账号、现存账号、正在移除的账号都留着
+    }
+
+    /// 删除还排着队时，同一编号又给了新账号：迟到的删除不能碰新账号的目录
+    @Test func queuedDiscardNeverHitsNewAccount() throws {
+        box.write("{}", ".claude.json")
+        let old = box.paths.browserData(chrome, "2")
+        try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+        effects.holdDiscard = true
+        effects.loginBrowser = chrome
+        let kawari = Kawari(paths: box.paths, effects: effects)
+        kawari.reload()
+        #expect(!exists(old))  // 已隔离，编号立刻可用
+        try kawari.addAccount()
+        #expect(kawari.accounts.map(\.key) == ["default", "2"])
+        #expect(exists(old))  // 新账号自己的目录
+        kawari.reload()
+        #expect(!effects.heldDiscards.isEmpty)
+        for item in effects.heldDiscards {
+            #expect(item.lastPathComponent.hasPrefix(".discard-"))
+            try? FileManager.default.removeItem(at: item)
+        }
+        #expect(exists(old))
+    }
+
+    /// 目录已移走、回调还没回来时添加账号：不能拿到同一个编号，否则回调会删掉新账号的文件
+    @Test func numberStaysReservedWhileRemovalFinishes() throws {
+        box.signIn(".claude-accounts/2/.claude.json", "me@work.com")
+        effects.holdRemoval = true
+        let kawari = Kawari(paths: box.paths, effects: effects)
+        kawari.remove(kawari.accounts[1])
+        try FileManager.default.removeItem(at: box.home.appending(path: ".claude-accounts/2"))
+        try kawari.addAccount()
+        #expect(kawari.accounts.map(\.key) == ["default", "3"])
+        effects.heldRemoval?(true)
+        #expect(exists(box.paths.loginScript("3")))
     }
 }
