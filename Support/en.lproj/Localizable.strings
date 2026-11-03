@@ -46,7 +46,7 @@
 /* 移除 */
 "移除 %@？" = "Remove %@?";
 "这个账号" = "this account";
-"会退出它的登录，并把它的目录移到废纸篓。会话记录与设置是共用的，不受影响。" = "kawari signs it out and moves its folder to the Trash. Shared sessions and settings stay as they are.";
+"会退出它的登录，把它的目录移到废纸篓，并删除 kawari 为它保留的浏览器数据。会话记录与设置是共用的，不受影响。" = "kawari signs it out, moves its folder to the Trash, and deletes the browser data it kept for this account. Shared sessions and settings stay as they are.";
 "移除" = "Remove";
 "取消" = "Cancel";
 
@@ -58,6 +58,11 @@
 "退出登录时出错，目录已保留。仍然移除会跳过退出登录，它在钥匙串里的登录凭证可能会留下。" = "Signing out failed, so its folder was kept. Removing it anyway skips sign-out, and its sign-in may stay in your Keychain.";
 "仍然移除" = "Remove Anyway";
 "登录用的终端" = "Terminal for Sign-In";
+"登录用的浏览器" = "Browser for Sign-In";
+"选 Chrome 或 Edge 时，每个账号单独保存登录状态" = "Chrome and Edge keep a separate sign-in for each account";
+"注意：这次登录的不是 %@，而是：" = "Heads up: this didn’t sign in as %@. It signed in as:";
+"这个账号位现在属于上面的邮箱。登错了就在 kawari 里重新登录。" = "This account slot now belongs to the email above. If that’s wrong, sign in again from kawari.";
+"没能确认这次登录的是哪个账号，请在 kawari 面板里核对邮箱。" = "Couldn’t confirm which account signed in. Check the email in the kawari panel.";
 "跟随系统（%@）" = "System (%@)";
 
 /* 命令行 */

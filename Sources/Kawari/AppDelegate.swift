@@ -165,17 +165,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
             // 装了不止一个终端时，可以选登录用哪个
             let terminals = Terminal.installed
             if terminals.count > 1 {
-                let choices = NSMenu(), current = Terminal.selectedID
-                let system = Terminal.systemDefault.map { String(localized: "跟随系统（\(Terminal.name($0))）") }
-                choices.addItem(Item(system ?? String(localized: "跟随系统"), on: current == nil) { Terminal.select(nil) })
-                choices.addItem(.separator())
-                for app in terminals {
-                    let id = Bundle(url: app)?.bundleIdentifier
-                    choices.addItem(Item(Terminal.name(app), on: id == current) { Terminal.select(app) })
-                }
-                let terminal = NSMenuItem(title: String(localized: "登录用的终端"), action: nil, keyEquivalent: "")
-                terminal.submenu = choices
-                menu.addItem(terminal)
+                menu.addItem(appChooser(String(localized: "登录用的终端"), system: Terminal.systemDefault,
+                                        current: Terminal.selectedID, apps: terminals, select: Terminal.select))
+            }
+            let browsers = LoginBrowser.installed
+            if !browsers.isEmpty {
+                menu.addItem(appChooser(String(localized: "登录用的浏览器"), system: LoginBrowser.systemDefault,
+                                        current: LoginBrowser.selectedID, apps: browsers,
+                                        note: String(localized: "选 Chrome 或 Edge 时，每个账号单独保存登录状态"),
+                                        select: LoginBrowser.select))
             }
             let languages = NSMenu()
             let selected = Language.selected
@@ -194,6 +192,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
             NSWorkspace.shared.open(URL(string: "https://github.com/dogxii/kawari")!)
         })
         menu.addItem(Item(String(localized: "退出 kawari"), key: "q") { NSApp.terminate(nil) })
+    }
+
+    /// 跟随系统，或者选一个装了的 App。note 没有动作，菜单会把它显示成灰色的说明
+    private func appChooser(_ title: String, system: URL?, current: String?, apps: [URL], note: String? = nil,
+                            select: @escaping @MainActor (URL?) -> Void) -> NSMenuItem {
+        func name(_ app: URL) -> String {
+            FileManager.default.displayName(atPath: app.path).replacingOccurrences(of: ".app", with: "")
+        }
+        let choices = NSMenu()
+        let follow = system.map { String(localized: "跟随系统（\(name($0))）") } ?? String(localized: "跟随系统")
+        choices.addItem(Item(follow, on: current == nil) { select(nil) })
+        choices.addItem(.separator())
+        for app in apps {
+            choices.addItem(Item(name(app), on: Bundle(url: app)?.bundleIdentifier == current) { select(app) })
+        }
+        if let note {
+            choices.addItem(.separator())
+            choices.addItem(NSMenuItem(title: note, action: nil, keyEquivalent: ""))
+        }
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.submenu = choices
+        return item
     }
 
     private func toggleCommandLineTool() {
@@ -239,7 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
     private func confirmRemove(_ account: Account) {
         let alert = NSAlert()
         alert.messageText = String(localized: "移除 \(account.email ?? String(localized: "这个账号"))？")
-        alert.informativeText = String(localized: "会退出它的登录，并把它的目录移到废纸篓。会话记录与设置是共用的，不受影响。")
+        alert.informativeText = String(localized: "会退出它的登录，把它的目录移到废纸篓，并删除 kawari 为它保留的浏览器数据。会话记录与设置是共用的，不受影响。")
         alert.addButton(withTitle: String(localized: "移除"))
         alert.addButton(withTitle: String(localized: "取消"))
         alert.buttons[0].hasDestructiveAction = true

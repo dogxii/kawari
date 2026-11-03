@@ -44,10 +44,15 @@ kwr status          Current account and 5-hour usage, for your prompt or tmux
 
 ## How it works
 
-Only official Claude Code mechanisms, no private APIs.
+Built on Claude Code’s own commands and configuration, no private APIs.
 
 - **Accounts**: the primary account is `~/.claude`; every other account gets `~/.claude-accounts/<n>`. The official `CLAUDE_CONFIG_DIR` keeps sign-ins apart, and Keychain entries are per directory too. Sign-in runs `claude auth login`.
 - **Shared data**: apart from `.claude.json` and credentials, everything in a secondary account's directory is a symlink into `~/.claude`. Sessions, `--resume`, settings, skills and plugins are one copy; MCP servers sync from the primary account.
+- **Browser for sign-in** (optional, follows the system by default): pick Chrome or Edge in the menu and kawari sets `BROWSER` inside the sign-in script only, so the official sign-in page opens in a data directory reserved for that account (`~/Library/Application Support/kawari/Browsers/`). You complete sign-in yourself and the browser keeps its own session; kawari doesn’t read cookies or tokens and automates nothing.
+  - It makes signing in again easier. It doesn’t make sign-outs less frequent.
+  - `/login` inside a session doesn’t go through kawari and still uses your default browser.
+  - The official docs only mention `BROWSER` for WSL2, so this may change; if the browser doesn’t open, the terminal still shows a sign-in link you can copy.
+  - Browsers managed by enterprise policy may not use the separate directory.
 - **Switching**: the selected directory is written to `~/.config/kawari/current`. A short snippet in `~/.zshrc` reads it before each command, so open terminals follow along; `launchctl setenv` covers apps opened afterwards, such as VS Code. Running sessions are left alone.
 - **Quota**: Claude Code hands the official `rate_limits` to the status line. kawari keeps a copy in `~/.config/kawari/usage/` and passes the input on to your original status line unchanged. Idle accounts show as reset once their reset time passes.
 - **Tokens**: the last 14 days of transcripts under `~/.claude/projects` are read incrementally, cache reads and writes included (same totals as ccusage).

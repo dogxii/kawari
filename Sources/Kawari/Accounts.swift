@@ -21,6 +21,11 @@ struct Paths: Sendable {
     var originalStatusLine: URL { support.appending(path: "statusline-original.sh") }
     /// 每个账号一份，连续登录几个账号时互不覆盖
     func loginScript(_ key: String) -> URL { support.appending(path: "login-\(key).command") }
+    /// 登录时交给 BROWSER 的脚本
+    func browserOpener(_ key: String) -> URL { support.appending(path: "login-\(key).browser") }
+    /// 里面有浏览器的 Cookie，不放 ~/.config，免得跟着 dotfiles 同步出去
+    var browsers: URL { home.appending(path: "Library/Application Support/kawari/Browsers") }
+    func browserData(_ bundleID: String, _ key: String) -> URL { browsers.appending(path: bundleID).appending(path: key) }
     var zshrc: URL { home.appending(path: ".zshrc") }
 }
 
@@ -125,9 +130,10 @@ enum Sharing {
         try? JSONFile.write(target, to: config)
     }
 
-    static func nextKey(in accounts: URL) -> String {
+    /// reserved 是目录已经不在、但编号还不能复用的账号
+    static func nextKey(in accounts: URL, reserved: Set<String>) -> String {
         var n = 2
-        while FileManager.default.fileExists(atPath: accounts.appending(path: "\(n)").path) { n += 1 }
+        while reserved.contains("\(n)") || FileManager.default.fileExists(atPath: accounts.appending(path: "\(n)").path) { n += 1 }
         return "\(n)"
     }
 }

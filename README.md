@@ -40,10 +40,15 @@ kwr status          当前账号与 5 小时用量，适合放进提示符或 tm
 
 ## 它是怎么做的
 
-只用 Claude Code 官方提供的机制，不调用任何非公开接口。
+用 Claude Code 自带的命令和配置，不调用任何非公开接口。
 
 - **多账号**：主账号是 `~/.claude`，其余账号各占 `~/.claude-accounts/<n>`，靠官方的 `CLAUDE_CONFIG_DIR` 隔离登录，钥匙串条目也按目录区分。登录走 `claude auth login`。
 - **共用数据**：副账号目录里除了 `.claude.json` 与凭证，其余全部软链接到 `~/.claude`。会话记录、`--resume`、设置、skills、插件都是同一份；MCP 服务器以主账号为准同步过去。
+- **登录用的浏览器**（可选，默认跟随系统）：在菜单里选 Chrome 或 Edge 后，kawari 只在登录脚本里设置 `BROWSER`，让官方登录页在这个账号专用的数据目录（`~/Library/Application Support/kawari/Browsers/`）里打开。登录由你在浏览器里亲自完成，状态由浏览器自己保存；kawari 不读取 Cookie 或令牌，也没有自动操作。
+  - 它只让重新登录更省事，不会减少掉登录的次数。
+  - 会话内的 `/login` 不经过 kawari，仍用默认浏览器。
+  - 官方文档只在 WSL2 部分提到 `BROWSER`，以后行为可能变化；打不开时终端里仍有可复制的登录链接。
+  - 受企业策略管理的浏览器可能不使用独立目录。
 - **切换**：把选中的目录写进 `~/.config/kawari/current`。`~/.zshrc` 里的一小段在每条命令前读取它，已打开的终端也会跟着换；同时 `launchctl setenv`，之后打开的 App（如 VS Code）也会使用它。正在运行的会话不受影响。
 - **额度**：Claude Code 会把官方的 `rate_limits` 交给 status line。kawari 在这里记下一份到 `~/.config/kawari/usage/`，再原样转给你原来的 status line。闲置的账号过了重置时间就按已清零显示。
 - **用量**：增量读取 `~/.claude/projects` 下最近 14 天的会话记录，统计 token（含缓存读写，口径与 ccusage 一致）。
