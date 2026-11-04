@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 @testable import Kawari
@@ -741,5 +742,143 @@ struct BrowserTests {
         #expect(kawari.accounts.map(\.key) == ["default", "3"])
         effects.heldRemoval?(true)
         #expect(exists(box.paths.loginScript("3")))
+    }
+}
+
+// MARK: - 面板
+
+@MainActor
+struct PanelTests {
+    let box = Sandbox()
+    let effects = RecordingEffects()
+    let now = Date(timeIntervalSince1970: 1_900_000_000)
+
+    /// 放进窗口的面板：tooltip 要到视图进了窗口才会注册
+    private func panel() -> (NSWindow, PanelView) {
+        _ = NSApplication.shared
+        let kawari = Kawari(paths: box.paths, effects: effects, clock: { [now] in now })
+        let panel = PanelView(kawari: kawari, menu: NSMenu()) { _ in NSMenu() }
+        panel.sync()
+        let window = NSWindow(contentRect: panel.bounds, styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = panel
+        return (window, panel)
+    }
+
+    private func rows(_ panel: PanelView) -> [NSView] {
+        panel.subviews.filter { $0.frame.height == 30 }.sorted { $0.frame.minY < $1.frame.minY }
+    }
+
+    private func usage(_ five: String, _ seven: String, key: String = "default") {
+        box.write(#"{"rate_limits":{\#(five)\#(five.isEmpty ? "" : ",")\#(seven)}}"#, ".config/kawari/usage/\(key).json")
+    }
+
+    private func window(_ name: String, used: Int, resetsIn seconds: Int) -> String {
+        #""\#(name)":{"used_percentage":\#(used),"resets_at":\#(Int(now.timeIntervalSince1970) + seconds)}"#
+    }
+
+    private func hover(_ row: NSView, entering: Bool) {
+        let event = NSEvent.enterExitEvent(with: entering ? .mouseEntered : .mouseExited, location: .zero, modifierFlags: [], timestamp: 0,
+                                           windowNumber: 0, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil)!
+        if entering { row.mouseEntered(with: event) } else { row.mouseExited(with: event) }
+    }
+
+    private var card: NSWindow? { NSApp.windows.first { $0.ignoresMouseEvents && $0.isVisible } }
+
+    /// 两个账号都有额度，主账号是当前账号
+    private func twoAccounts() -> (NSWindow, PanelView) {
+        box.signIn(".claude.json", "me@home.com", type: "claude_pro")
+        box.signIn(".claude-accounts/2/.claude.json", "me@work.com", type: "claude_pro")
+        for key in ["default", "2"] {
+            usage(window("five_hour", used: 62, resetsIn: 4800), window("seven_day", used: 23, resetsIn: 3 * 86400), key: key)
+        }
+        let (window, panel) = panel()
+        window.orderFront(nil)
+        return (window, panel)
+    }
+
+    @Test func cardShowsForEveryAccountWithQuota() {
+        let (window, panel) = twoAccounts()
+        defer { panel.hide(); window.close() }
+        for row in rows(panel) {
+            hover(row, entering: true)
+            #expect(card == nil)  // 路过不弹
+            RunLoop.main.run(until: Date() + 0.3)
+            #expect(card?.parent === window)
+            hover(row, entering: false)
+            #expect(card == nil)
+        }
+    }
+
+    /// 鼠标先进下一行、后离开上一行时，卡片不能被晚到的离开关掉
+    @Test func lateExitFromPreviousRowKeepsCard() {
+        let (window, panel) = twoAccounts()
+        defer { panel.hide(); window.close() }
+        let rows = rows(panel)
+        hover(rows[0], entering: true)
+        RunLoop.main.run(until: Date() + 0.3)
+        hover(rows[1], entering: true)
+        hover(rows[0], entering: false)
+        #expect(card != nil)
+    }
+
+    @Test func closingPanelDismissesCard() {
+        let (window, panel) = twoAccounts()
+        defer { window.close() }
+        hover(rows(panel)[1], entering: true)
+        RunLoop.main.run(until: Date() + 0.3)
+        #expect(card != nil)
+        panel.hide()
+        #expect(card == nil)
+    }
+
+    @Test func cardWithoutQuotaDataStaysHidden() {
+        box.signIn(".claude.json", "me@home.com", type: "claude_pro")
+        box.signIn(".claude-accounts/2/.claude.json", "me@work.com", type: "claude_pro")
+        let (window, panel) = panel()
+        window.orderFront(nil)
+        defer { panel.hide(); window.close() }
+        hover(rows(panel)[1], entering: true)
+        RunLoop.main.run(until: Date() + 0.3)
+        #expect(card == nil)
+    }
+
+    @Test func cardSitsBesideThePanelAndStaysOnScreen() {
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 875)
+        let row = CGRect(x: 606, y: 500, width: 256, height: 30)
+        let panel = CGRect(x: 600, y: 400, width: 268, height: 460)
+        let size = HoverCard.size
+
+        let right = HoverCard.frame(row: row, panel: panel, screen: screen)
+        #expect(right.minX == panel.maxX + 10)
+        #expect(right.maxY == row.maxY)
+
+        // 图标靠屏幕右边，右侧放不下：换到面板左边
+        let left = HoverCard.frame(row: row.offsetBy(dx: 500, dy: 0), panel: panel.offsetBy(dx: 500, dy: 0), screen: screen)
+        #expect(left.maxX == panel.minX + 500 - 10)
+
+        // 靠近屏幕底部：往上推，不超出屏幕
+        let low = HoverCard.frame(row: CGRect(x: 1100, y: 20, width: 256, height: 30), panel: panel, screen: screen)
+        #expect(low.minY == 8 && low.height == size.height)
+    }
+
+    /// 卡片是画出来的小窗，读屏读不到：内容要放进账号行的辅助说明
+    @Test func rowExposesQuotaToAccessibility() {
+        box.signIn(".claude.json", "me@home.com", type: "claude_pro")
+        box.signIn(".claude-accounts/2/.claude.json", "me@work.com", type: "claude_pro")
+        usage(window("five_hour", used: 62, resetsIn: 4800), window("seven_day", used: 23, resetsIn: -60))
+        let (_, panel) = panel()
+        #expect(rows(panel)[0].accessibilityHelp() == "5 小时 62%，1h 20m 后重置；7 天 0%，已重置，额度充足")
+        #expect(rows(panel)[1].accessibilityHelp() == nil)
+    }
+
+    /// tooltip 也是一个 tracking area：刷新自己的区域时删了它，提示就再也不出现
+    @Test func settingsButtonKeepsTooltip() throws {
+        box.signIn(".claude.json", "me@home.com")
+        let (window, panel) = panel()
+        defer { window.close() }
+        let button = try #require(panel.subviews.first { $0.frame.height == 40 }?.subviews.first { $0.toolTip != nil })
+        button.updateTrackingAreas()
+        #expect(button.trackingAreas.contains { $0.owner !== button })
     }
 }

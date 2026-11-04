@@ -2,7 +2,8 @@ import AppKit
 
 /// 面板，自上而下：
 /// - 当前账号：身份与 5 小时 / 7 天两组额度（最常看的放最上面、最大）
-/// - 账号：全部账号，点击或按字母键切换，右侧两个圆环是各自的 5 小时、7 天额度
+/// - 账号：全部账号，点击或按字母键切换，右侧两个圆环是各自的 5 小时、7 天额度；
+///   悬停时旁边弹出它的额度卡片，不用切过去也能看什么时候重置
 /// - Token 用量：今天、7 天与近 14 天趋势
 /// - 操作：添加账号、设置
 ///
@@ -28,6 +29,8 @@ final class PanelView: NSView {
     private var separators: [CGFloat] = []
     private var accountsTitle: CGFloat = 0
     private var ticker: Timer?
+    private let card = HoverCard()
+    private var hoveredKey: String?
     var onResize: (NSSize) -> Void = { _ in }
 
     init(kawari: Kawari, menu: NSMenu, rowMenu: @escaping (Account) -> NSMenu) {
@@ -57,6 +60,15 @@ final class PanelView: NSView {
     func hide() {
         ticker?.invalidate()
         ticker = nil
+        hoveredKey = nil
+        updateCard()
+    }
+
+    private func updateCard() {
+        guard let key = hoveredKey, let limits = kawari.limits[key],
+              let index = kawari.accounts.firstIndex(where: { $0.key == key }), index < rows.count
+        else { return card.dismiss() }
+        card.present(limits, now: kawari.now, beside: rows[index])
     }
 
     func sync() {
@@ -75,7 +87,16 @@ final class PanelView: NSView {
             row.update(account, letter: kawari.letter(account), active: account.key == kawari.activeKey,
                        pending: kawari.pending == account.key, limits: kawari.limits[account.key], now: now)
             row.onClick = { [unowned self] in kawari.activate(account) }
-            row.contextMenu = { [unowned self] in rowMenu(account) }
+            row.contextMenu = { [unowned self] in
+                hoveredKey = nil
+                updateCard()
+                return rowMenu(account)
+            }
+            // 从一行移到下一行时，离开可能晚于进入：只有还停在这一行才清掉
+            row.onHover = { [unowned self] inside in
+                if inside { hoveredKey = account.key } else if hoveredKey == account.key { hoveredKey = nil }
+                updateCard()
+            }
         }
 
         if kawari.integrated {
@@ -89,6 +110,7 @@ final class PanelView: NSView {
         }
         usage.update(kawari.totals)
         layoutPanel()
+        updateCard()
         needsDisplay = true
     }
 
@@ -199,6 +221,33 @@ private func drawBadge(_ letter: String, in rect: CGRect, active: Bool, signedIn
                               withAttributes: [.font: font, .foregroundColor: color])
 }
 
+/// 过了重置时间，或者 Claude Code 重置后去掉了这个窗口，都算已重置
+private func resetCaption(_ window: Window?, now: Date) -> String {
+    guard let window, window.resets > now else { return String(localized: "已重置，额度充足") }
+    return String(localized: "\(Format.until(window.resets, now: now)) 后重置")
+}
+
+/// 标题与百分比一行，粗一点的进度条，下面一行写什么时候重置；共 45pt 高
+@MainActor
+private func drawMeter(_ title: String, _ window: Window?, y: CGFloat, left: CGFloat, right: CGFloat, now: Date) {
+    let used = window?.used(at: now) ?? 0
+    Text.draw(title, Text.label, .labelColor, in: CGRect(x: left, y: y, width: 120, height: 16))
+    Text.draw("\(Int(used.rounded()))%", Text.percent, used >= 80 ? meterColor(used) : .labelColor,
+              in: CGRect(x: right - 70, y: y - 1, width: 70, height: 17), align: .right)
+
+    let track = CGRect(x: left, y: y + 20, width: right - left, height: 6)
+    NSColor.labelColor.withAlphaComponent(0.1).setFill()
+    NSBezierPath(roundedRect: track, xRadius: 3, yRadius: 3).fill()
+    if used > 0 {
+        meterColor(used).setFill()
+        var fill = track
+        fill.size.width = max(track.width * used / 100, track.height)
+        NSBezierPath(roundedRect: fill, xRadius: 3, yRadius: 3).fill()
+    }
+    Text.draw(resetCaption(window, now: now), Text.caption, .secondaryLabelColor,
+              in: CGRect(x: left, y: y + 30, width: right - left, height: 15))
+}
+
 // MARK: - 当前账号
 
 @MainActor
@@ -248,34 +297,8 @@ private final class Summary: NSView {
             Text.draw(hint, Text.caption, .secondaryLabelColor, in: box.insetBy(dx: 10, dy: 8), align: .center)
             return
         }
-        meter(String(localized: "5 小时"), limits.fiveHour, y: 40, left: left, right: right)
-        meter(String(localized: "7 天"), limits.sevenDay, y: 96, left: left, right: right)
-    }
-
-    /// 标题与百分比一行，粗一点的进度条，下面一行写什么时候重置；共 45pt 高
-    private func meter(_ title: String, _ window: Window?, y: CGFloat, left: CGFloat, right: CGFloat) {
-        let used = window?.used(at: now) ?? 0
-        Text.draw(title, Text.label, .labelColor, in: CGRect(x: left, y: y, width: 120, height: 16))
-        Text.draw("\(Int(used.rounded()))%", Text.percent, used >= 80 ? meterColor(used) : .labelColor,
-                  in: CGRect(x: right - 70, y: y - 1, width: 70, height: 17), align: .right)
-
-        let track = CGRect(x: left, y: y + 20, width: right - left, height: 6)
-        NSColor.labelColor.withAlphaComponent(0.1).setFill()
-        NSBezierPath(roundedRect: track, xRadius: 3, yRadius: 3).fill()
-        if used > 0 {
-            meterColor(used).setFill()
-            var fill = track
-            fill.size.width = max(track.width * used / 100, track.height)
-            NSBezierPath(roundedRect: fill, xRadius: 3, yRadius: 3).fill()
-        }
-
-        let caption: String
-        if let window, window.resets > now {
-            caption = String(localized: "\(Format.until(window.resets, now: now)) 后重置")
-        } else {
-            caption = String(localized: "已重置，额度充足")
-        }
-        Text.draw(caption, Text.caption, .secondaryLabelColor, in: CGRect(x: left, y: y + 30, width: right - left, height: 15))
+        drawMeter(String(localized: "5 小时"), limits.fiveHour, y: 40, left: left, right: right, now: now)
+        drawMeter(String(localized: "7 天"), limits.sevenDay, y: 96, left: left, right: right, now: now)
     }
 }
 
@@ -295,6 +318,7 @@ private final class AccountRow: NSView {
     private var hovered = false { didSet { if hovered != oldValue { needsDisplay = true } } }
     private var overAction = false { didSet { if overAction != oldValue { needsDisplay = true } } }
     var onClick: () -> Void = {}
+    var onHover: (Bool) -> Void = { _ in }
     var contextMenu: () -> NSMenu = { NSMenu() }
 
     override var isFlipped: Bool { true }
@@ -318,40 +342,36 @@ private final class AccountRow: NSView {
         self.pending = pending
         self.limits = limits
         self.now = now
-        toolTip = tooltip()
         setAccessibilityRole(.button)
         setAccessibilityLabel([letter, account.email ?? String(localized: "未登录"), active ? String(localized: "当前账号") : nil]
             .compactMap { $0 }.joined(separator: "，"))
+        setAccessibilityHelp(quotaHelp)
         needsDisplay = true
     }
 
-    /// 两个圆环各是什么、多久重置、套餐，都放在提示里，行本身保持干净
-    private func tooltip() -> String? {
-        guard account.signedIn else { return nil }
-        var lines = [account.plan].compactMap { $0 }
-        if let limits {
-            for (title, window) in [(String(localized: "5 小时"), limits.fiveHour), (String(localized: "7 天"), limits.sevenDay)] {
-                var line = "\(title) \(Int((window?.used(at: now) ?? 0).rounded()))%"
-                if let window, window.resets > now {
-                    line += " · " + String(localized: "\(Format.until(window.resets, now: now)) 后重置")
-                }
-                lines.append(line)
-            }
-        }
-        return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    /// 额度卡片读屏读不到，同样的内容放进辅助说明
+    private var quotaHelp: String? {
+        guard account.signedIn, let limits else { return nil }
+        return [(String(localized: "5 小时"), limits.fiveHour), (String(localized: "7 天"), limits.sevenDay)].map { title, window in
+            "\(title) \(Int((window?.used(at: now) ?? 0).rounded()))%，\(resetCaption(window, now: now))"
+        }.joined(separator: "；")
     }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        trackingAreas.forEach(removeTrackingArea)
+        trackingAreas.filter { $0.owner === self }.forEach(removeTrackingArea)  // tooltip 也是 tracking area，不能一起删
         addTrackingArea(NSTrackingArea(
             rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect], owner: self))
     }
 
-    override func mouseEntered(with event: NSEvent) { hovered = true }
+    override func mouseEntered(with event: NSEvent) {
+        hovered = true
+        onHover(true)
+    }
     override func mouseExited(with event: NSEvent) {
         hovered = false
         overAction = false
+        onHover(false)
     }
     override func mouseMoved(with event: NSEvent) {
         overAction = actionRect.contains(convert(event.locationInWindow, from: nil))
@@ -431,6 +451,106 @@ private final class AccountRow: NSView {
         arc.lineCapStyle = .round
         meterColor(used, calm: color).setStroke()
         arc.stroke()
+    }
+}
+
+// MARK: - 额度卡片
+
+/// 悬停账号时贴在面板旁边的小窗，内容和面板顶部的额度一样。
+/// 不接收鼠标：点击都穿过去，不影响「切换」按钮和面板的关闭
+@MainActor
+final class HoverCard {
+    static let size = CGSize(width: 190, height: 125)
+    private static let delay: TimeInterval = 0.15
+    private static let radius: CGFloat = 11
+
+    let window = NSPanel(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
+                         backing: .buffered, defer: true)
+    private let quota = QuotaView(frame: CGRect(origin: .zero, size: size))
+    private var pending: Timer?
+
+    init() {
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = true
+        window.ignoresMouseEvents = true
+        window.isReleasedWhenClosed = false
+        window.animationBehavior = .none
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        let material = NSVisualEffectView(frame: quota.frame)
+        material.material = .popover
+        material.blendingMode = .behindWindow
+        material.state = .active
+        material.maskImage = Self.mask()
+        material.addSubview(quota)
+        window.contentView = material
+    }
+
+    /// 第一次等一小会，免得鼠标路过就弹；已经开着时，换到别的账号立刻跟上
+    func present(_ limits: Limits, now: Date, beside row: NSView) {
+        pending?.invalidate()
+        pending = nil
+        quota.update(limits, now: now)
+        if window.isVisible { return place(beside: row) }
+        pending = .onMain(after: Self.delay) { [weak self, weak row] in
+            if let row { self?.place(beside: row) }
+        }
+    }
+
+    func dismiss() {
+        pending?.invalidate()
+        pending = nil
+        window.parent?.removeChildWindow(window)
+        window.orderOut(nil)
+    }
+
+    private func place(beside row: NSView) {
+        guard let panel = row.superview, let host = row.window, let screen = host.screen else { return }
+        window.setFrame(Self.frame(row: host.convertToScreen(row.convert(row.bounds, to: nil)),
+                                   panel: host.convertToScreen(panel.convert(panel.bounds, to: nil)),
+                                   screen: screen.visibleFrame), display: true)
+        if window.parent == nil { host.addChildWindow(window, ordered: .above) }
+    }
+
+    /// 默认在面板右边，放不下换到左边；顶边对齐账号行，不超出屏幕
+    static func frame(row: CGRect, panel: CGRect, screen: CGRect) -> CGRect {
+        let gap: CGFloat = 10, margin: CGFloat = 8
+        let right = panel.maxX + gap
+        let x = right + size.width <= screen.maxX - margin ? right : panel.minX - gap - size.width
+        let y = min(max(row.maxY - size.height, screen.minY + margin), screen.maxY - margin - size.height)
+        return CGRect(origin: CGPoint(x: x, y: y), size: size)
+    }
+
+    private static func mask() -> NSImage {
+        let side = radius * 2 + 1
+        let image = NSImage(size: CGSize(width: side, height: side), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        image.resizingMode = .stretch
+        return image
+    }
+}
+
+@MainActor
+private final class QuotaView: NSView {
+    private var limits = Limits()
+    private var now = Date()
+
+    override var isFlipped: Bool { true }
+
+    func update(_ limits: Limits, now: Date) {
+        self.limits = limits
+        self.now = now
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let left = PanelView.inset, right = bounds.width - PanelView.inset
+        drawMeter(String(localized: "5 小时"), limits.fiveHour, y: 12, left: left, right: right, now: now)
+        drawMeter(String(localized: "7 天"), limits.sevenDay, y: 68, left: left, right: right, now: now)
     }
 }
 
@@ -585,7 +705,7 @@ private final class HoverButton: NSButton {
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        trackingAreas.forEach(removeTrackingArea)
+        trackingAreas.filter { $0.owner === self }.forEach(removeTrackingArea)  // tooltip 也是 tracking area，不能一起删
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
     }
 
