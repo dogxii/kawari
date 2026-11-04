@@ -5,6 +5,8 @@ import AppKit
 final class Quiet: Effects {
     func setEnvironment(_ dir: String?) {}
     func open(_ script: URL) {}
+    var loginBrowser: String? { nil }
+    func discard(_ items: [URL]) {}
     func remove(_ dir: URL, logout: Bool, then done: @escaping @MainActor @Sendable (Bool) -> Void) {}
 }
 

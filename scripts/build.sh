@@ -5,25 +5,29 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-ARCHS=(--arch arm64)
+ARCHS=(arm64)
 DMG=0
 for arg in "$@"; do
     case "$arg" in
-        --universal) ARCHS=(--arch arm64 --arch x86_64) ;;
+        --universal) ARCHS=(arm64 x86_64) ;;
         --dmg) DMG=1 ;;
         *) echo "未知参数：$arg" >&2; exit 1 ;;
     esac
 done
 
 # -Osize 配合链接时优化（LTO）可省约 9% 代码；不需要调试信息
-FLAGS=(-c release --experimental-lto-mode=full -Xswiftc -Osize -Xswiftc -gnone "${ARCHS[@]}")
-swift build "${FLAGS[@]}"
-BIN="$(swift build "${FLAGS[@]}" --show-bin-path)/Kawari"
+FLAGS=(-c release --experimental-lto-mode=full -Xswiftc -Osize -Xswiftc -gnone)
+# 一次编一个架构再合并：同时传两个 --arch 时 SwiftPM 换用 XCBuild，LTO 不生效，每个架构大约 18%
+BINS=()
+for arch in "${ARCHS[@]}"; do
+    swift build "${FLAGS[@]}" --arch "$arch"
+    BINS+=("$(swift build "${FLAGS[@]}" --arch "$arch" --show-bin-path)/Kawari")
+done
 
 APP=build/kawari.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/Kawari"
+lipo -create "${BINS[@]}" -output "$APP/Contents/MacOS/Kawari"
 strip -x "$APP/Contents/MacOS/Kawari"
 cp Support/Info.plist "$APP/Contents/"
 cp Support/AppIcon.icns "$APP/Contents/Resources/"
